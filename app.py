@@ -708,6 +708,42 @@ speakerBtn.classList.add('active');
 sendBtn.addEventListener('click', () => { const t = textInput.value.trim(); if (t) { textInput.value = ''; sendMessage(t); } });
 textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); } });
 statusDot.classList.add('online'); statusText.textContent = '在线';
+
+// PWA 安装按钮（华为/Android 兼容）
+let deferredPrompt;
+const installBanner = document.createElement('div');
+installBanner.id = 'install-banner';
+installBanner.innerHTML = '<button id="install-btn">📱 添加到桌面</button>';
+installBanner.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9999;display:none;';
+document.body.appendChild(installBanner);
+
+const installBtn = document.getElementById('install-btn');
+installBtn.style.cssText = 'background:linear-gradient(135deg,#e84393,#fd79a8);color:#fff;border:none;padding:12px 28px;border-radius:25px;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(232,67,147,0.4);';
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBanner.style.display = 'block';
+});
+
+installBtn.addEventListener('click', async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const result = await deferredPrompt.userChoice;
+    if (result.outcome === 'accepted') {
+      installBanner.style.display = 'none';
+    }
+    deferredPrompt = null;
+  } else {
+    // 华为手机兜底：提示手动添加
+    alert('请在浏览器菜单中查找"添加到桌面"或"安装应用"选项');
+  }
+});
+
+// 已安装则隐藏按钮
+window.addEventListener('appinstalled', () => {
+  installBanner.style.display = 'none';
+});
 </script>
 </body>
 </html>"""
