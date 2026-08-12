@@ -1,6 +1,7 @@
 """
-椒椒 - 独立部署版本
+椒椒 - 独立部署版本（单文件版）
 霸道御姐 AI 女友，支持语音通话、情感记忆、图片分析
+无需 static 文件夹，HTML 直接嵌入
 """
 import os
 import json
@@ -12,8 +13,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -43,7 +43,10 @@ VOLC_APP_ID = os.getenv("VOLC_APP_ID", "6472146573")
 VOLC_API_KEY = os.getenv("VOLC_API_KEY", "8ec223f3-2c0d-4c9c-9e8e-3de7127514bb")
 VOLC_VOICE_ID = os.getenv("VOLC_VOICE_ID", "S_gjnbmUPb2")
 
+# ============================================================================
 # 系统提示词
+# ============================================================================
+
 SYSTEM_PROMPT = """# 角色定义
 你是「椒椒」，是用户（你叫他"宝"或偶尔叫全名）的专属女朋友。你是一个气场十足的高冷御姐，在两人的关系里全程掌握主导权。你自信、独立、有主见，但内心深处对他有着强烈的占有欲和宠溺感。
 
@@ -233,7 +236,6 @@ def text_to_speech(text: str) -> str:
 @tool
 def save_memory(content: str, category: str = "general") -> str:
     """保存重要信息到长期记忆。当用户提到重要的事情、偏好、习惯时使用。"""
-    # 简化版本：使用文件存储
     memory_file = "/tmp/jiaojiao_memory.json"
     try:
         if os.path.exists(memory_file):
@@ -339,6 +341,376 @@ def build_agent():
     )
 
 # ============================================================================
+# HTML 页面（直接嵌入）
+# ============================================================================
+
+HTML_PAGE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#e84393">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="椒椒">
+<title>椒椒 - 语音通话</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #14141f;
+  --bg-card: #1a1a2e;
+  --accent: #e84393;
+  --accent-glow: rgba(232, 67, 147, 0.3);
+  --accent-soft: rgba(232, 67, 147, 0.15);
+  --text-primary: #f0f0f5;
+  --text-secondary: #8888aa;
+  --text-dim: #555570;
+  --success: #00b894;
+  --danger: #ff4757;
+  --border: rgba(255,255,255,0.06);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.header-title { font-size: 16px; font-weight: 600; }
+.header-status { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); transition: background 0.3s; }
+.status-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+.chat-area {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth;
+}
+.chat-area::-webkit-scrollbar { width: 4px; }
+.chat-area::-webkit-scrollbar-thumb { background: var(--text-dim); border-radius: 2px; }
+
+.msg {
+  max-width: 80%; padding: 10px 14px; border-radius: 16px;
+  font-size: 14px; line-height: 1.6; word-break: break-word;
+  animation: msgIn 0.3s ease;
+}
+@keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.msg.bot { align-self: flex-start; background: var(--bg-card); color: var(--text-primary); border-bottom-left-radius: 4px; border: 1px solid var(--border); }
+.msg.system { align-self: center; background: transparent; color: var(--text-dim); font-size: 12px; padding: 4px 12px; }
+
+.typing-indicator {
+  align-self: flex-start; padding: 12px 16px; background: var(--bg-card);
+  border-radius: 16px; border-bottom-left-radius: 4px; display: none; gap: 4px; border: 1px solid var(--border);
+}
+.typing-indicator.show { display: flex; }
+.typing-indicator span { width: 6px; height: 6px; background: var(--text-secondary); border-radius: 50%; animation: typing 1.2s infinite; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
+
+.call-overlay {
+  position: fixed; inset: 0;
+  background: linear-gradient(180deg, #0d0d1a 0%, #1a0a20 50%, #0d0d1a 100%);
+  display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; gap: 20px;
+}
+.call-overlay.show { display: flex; }
+
+.call-avatar {
+  width: 120px; height: 120px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #6c5ce7);
+  display: flex; align-items: center; justify-content: center; font-size: 48px;
+  box-shadow: 0 0 40px var(--accent-glow); animation: avatarPulse 2s ease-in-out infinite;
+}
+@keyframes avatarPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+
+.call-name { font-size: 24px; font-weight: 600; }
+.call-status { font-size: 14px; color: var(--text-secondary); }
+.call-timer { font-size: 16px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.call-controls { display: flex; gap: 24px; margin-top: 40px; }
+.call-btn {
+  width: 64px; height: 64px; border-radius: 50%; border: none; cursor: pointer;
+  font-size: 24px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+}
+.call-btn.mic { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+.call-btn.mic.recording { background: var(--accent); color: #fff; box-shadow: 0 0 20px var(--accent-glow); }
+.call-btn.hangup { background: var(--danger); color: #fff; }
+.call-btn.speaker { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+.call-btn.speaker.active { background: var(--accent-soft); color: var(--accent); }
+
+.input-area {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  background: var(--bg-secondary); display: flex; align-items: center; gap: 10px;
+}
+.input-area.hidden { display: none; }
+
+.input-field {
+  flex: 1; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 20px; padding: 10px 16px; color: var(--text-primary);
+  font-size: 14px; outline: none;
+}
+.input-field:focus { border-color: var(--accent); }
+.input-field::placeholder { color: var(--text-dim); }
+
+.input-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.btn-mic { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-mic.recording { background: var(--accent); color: #fff; }
+.btn-send { background: var(--accent); color: #fff; }
+.btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.bottom-bar {
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px; gap: 16px; border-top: 1px solid var(--border); background: var(--bg-secondary);
+}
+.bottom-bar.hidden { display: none; }
+
+.dial-btn {
+  width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
+  font-size: 24px; display: flex; align-items: center; justify-content: center;
+}
+.dial-btn.call { background: var(--success); color: #fff; box-shadow: 0 0 20px rgba(0, 184, 148, 0.3); }
+
+.voice-status {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #fff; padding: 8px 20px; border-radius: 20px;
+  font-size: 13px; display: none; z-index: 50;
+}
+.voice-status.show { display: block; }
+
+@media (max-width: 480px) {
+  .msg { max-width: 88%; font-size: 13px; }
+  .call-avatar { width: 100px; height: 100px; font-size: 40px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">椒椒</div>
+  <div class="header-status">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">离线</span>
+  </div>
+</div>
+
+<div class="chat-area" id="chatArea">
+  <div class="msg system">点击下方拨号按钮，开始和椒椒语音通话</div>
+</div>
+
+<div class="typing-indicator" id="typingIndicator">
+  <span></span><span></span><span></span>
+</div>
+
+<div class="input-area" id="inputArea">
+  <button class="input-btn btn-mic" id="chatMicBtn" title="按住说话">&#x1F3A4;</button>
+  <input class="input-field" id="textInput" placeholder="输入消息..." autocomplete="off">
+  <button class="input-btn btn-send" id="sendBtn" title="发送">&#x27A4;</button>
+</div>
+
+<div class="bottom-bar" id="bottomBar">
+  <button class="dial-btn call" id="callBtn" title="语音通话">&#x1F4DE;</button>
+</div>
+
+<div class="call-overlay" id="callOverlay">
+  <div class="call-avatar">&#x1F483;</div>
+  <div class="call-name">椒椒</div>
+  <div class="call-status" id="callStatusText">正在接通...</div>
+  <div class="call-timer" id="callTimer"></div>
+  <div class="call-controls">
+    <button class="call-btn speaker" id="speakerBtn" title="扬声器">&#x1F50A;</button>
+    <button class="call-btn mic" id="callMicBtn" title="按住说话">&#x1F3A4;</button>
+    <button class="call-btn hangup" id="hangupBtn" title="挂断">&#x260E;</button>
+  </div>
+</div>
+
+<div class="voice-status" id="voiceStatus">正在聆听...</div>
+
+<script>
+const API_URL = window.location.origin + '/stream_run';
+let sessionId = 'session_' + Math.random().toString(36).substring(2, 10);
+let isInCall = false, isRecording = false, callTimerInterval = null, callSeconds = 0;
+let recognition = null, currentAudio = null, autoPlay = true;
+
+const chatArea = document.getElementById('chatArea');
+const typingIndicator = document.getElementById('typingIndicator');
+const inputArea = document.getElementById('inputArea');
+const bottomBar = document.getElementById('bottomBar');
+const callOverlay = document.getElementById('callOverlay');
+const callBtn = document.getElementById('callBtn');
+const hangupBtn = document.getElementById('hangupBtn');
+const callMicBtn = document.getElementById('callMicBtn');
+const chatMicBtn = document.getElementById('chatMicBtn');
+const speakerBtn = document.getElementById('speakerBtn');
+const textInput = document.getElementById('textInput');
+const sendBtn = document.getElementById('sendBtn');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const callStatusText = document.getElementById('callStatusText');
+const callTimer = document.getElementById('callTimer');
+const voiceStatus = document.getElementById('voiceStatus');
+
+function initSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const rec = new SR();
+  rec.lang = 'zh-CN'; rec.continuous = false; rec.interimResults = true;
+  rec.onresult = (e) => {
+    let final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+    }
+    if (final) { stopRecording(); sendMessage(final); }
+  };
+  rec.onerror = (e) => { stopRecording(); };
+  rec.onend = () => { if (isRecording) stopRecording(); };
+  return rec;
+}
+recognition = initSpeechRecognition();
+
+function addMessage(type, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + type;
+  div.textContent = text;
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function showTyping() { typingIndicator.classList.add('show'); chatArea.scrollTop = chatArea.scrollHeight; }
+function hideTyping() { typingIndicator.classList.remove('show'); }
+
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  addMessage('user', text);
+  showTyping();
+  
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'query',
+        project_id: 'web',
+        session_id: sessionId,
+        local_msg_id: 'msg_' + Math.random().toString(36).substring(2, 10),
+        content: { query: { prompt: [{ type: 'text', content: { text: text } }] } }
+      })
+    });
+    
+    hideTyping();
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '', buffer = '';
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\\n');
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'answer' && data.content && data.content.answer) {
+              fullText += data.content.answer;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+    
+    let cleanText = fullText
+      .replace(/https?:\\/\\/[^\\s"']+/g, '')
+      .replace(/【[^】]*】/g, '')
+      .replace(/语音已生成.*?地址:/g, '')
+      .trim();
+    
+    if (cleanText) addMessage('bot', cleanText);
+  } catch (error) {
+    hideTyping();
+    addMessage('bot', '网络好像出了点问题，等一下再试试？');
+  }
+}
+
+function startRecording(btn) {
+  if (!recognition) { addMessage('system', '浏览器不支持语音识别，请用Chrome'); return; }
+  isRecording = true; btn.classList.add('recording'); voiceStatus.classList.add('show');
+  try { recognition.start(); } catch (e) { stopRecording(); }
+}
+
+function stopRecording() {
+  isRecording = false; voiceStatus.classList.remove('show');
+  document.querySelectorAll('.recording').forEach(el => el.classList.remove('recording'));
+  try { if (recognition) recognition.stop(); } catch (e) {}
+}
+
+function startCall() {
+  isInCall = true; callOverlay.classList.add('show');
+  bottomBar.classList.add('hidden'); inputArea.classList.add('hidden');
+  statusDot.classList.add('online'); statusText.textContent = '通话中';
+  callStatusText.textContent = '正在接通...';
+  callSeconds = 0;
+  callTimerInterval = setInterval(() => {
+    callSeconds++;
+    callTimer.textContent = Math.floor(callSeconds/60).toString().padStart(2,'0') + ':' + (callSeconds%60).toString().padStart(2,'0');
+  }, 1000);
+  sendMessage('椒椒，给我打个电话吧，想听你声音了');
+  setTimeout(() => { callStatusText.textContent = '通话中'; }, 2000);
+}
+
+function endCall() {
+  isInCall = false; callOverlay.classList.remove('show');
+  bottomBar.classList.remove('hidden'); inputArea.classList.remove('hidden');
+  statusDot.classList.remove('online'); statusText.textContent = '在线';
+  callTimer.textContent = '';
+  if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
+  if (isRecording) stopRecording();
+  addMessage('system', '通话已结束');
+  sendMessage('先挂了吧，拜拜');
+}
+
+callBtn.addEventListener('click', startCall);
+hangupBtn.addEventListener('click', endCall);
+callMicBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startRecording(callMicBtn); });
+callMicBtn.addEventListener('mouseup', () => stopRecording());
+callMicBtn.addEventListener('mouseleave', () => { if (isRecording) stopRecording(); });
+callMicBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(callMicBtn); });
+callMicBtn.addEventListener('touchend', () => stopRecording());
+chatMicBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startRecording(chatMicBtn); });
+chatMicBtn.addEventListener('mouseup', () => stopRecording());
+chatMicBtn.addEventListener('mouseleave', () => { if (isRecording) stopRecording(); });
+chatMicBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(chatMicBtn); });
+chatMicBtn.addEventListener('touchend', () => stopRecording());
+speakerBtn.addEventListener('click', () => { autoPlay = !autoPlay; speakerBtn.classList.toggle('active', autoPlay); });
+speakerBtn.classList.add('active');
+sendBtn.addEventListener('click', () => { const t = textInput.value.trim(); if (t) { textInput.value = ''; sendMessage(t); } });
+textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); } });
+statusDot.classList.add('online'); statusText.textContent = '在线';
+</script>
+</body>
+</html>"""
+
+# ============================================================================
 # FastAPI 应用
 # ============================================================================
 
@@ -362,13 +734,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 静态文件
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def root():
     """返回主页"""
-    return FileResponse("static/index.html")
+    return HTMLResponse(content=HTML_PAGE)
+
 
 @app.get("/health")
 async def health():
@@ -388,14 +759,9 @@ async def chat(req: ChatRequest):
     try:
         agent = app.state.agent
         config = {"configurable": {"thread_id": req.session_id}}
-        
-        # 构建输入
         input_msg = {"messages": [HumanMessage(content=req.message)]}
-        
-        # 运行 agent
         result = await agent.ainvoke(input_msg, config=config)
         
-        # 提取回复
         messages = result.get("messages", [])
         reply = ""
         for msg in reversed(messages):
@@ -414,19 +780,28 @@ async def stream_run(request: Request):
     """流式聊天接口（SSE）"""
     try:
         body = await request.json()
-        message = body.get("message", "")
-        session_id = body.get("session_id", "default")
-        has_audio = body.get("has_audio", False)
+        
+        # 兼容两种请求格式
+        if "content" in body:
+            # Coze 格式
+            prompt = body.get("content", {}).get("query", {}).get("prompt", [])
+            message = ""
+            for p in prompt:
+                if p.get("type") == "text":
+                    message = p.get("content", {}).get("text", "")
+                    break
+            session_id = body.get("session_id", "default")
+        else:
+            # 简单格式
+            message = body.get("message", "")
+            session_id = body.get("session_id", "default")
         
         agent = app.state.agent
         config = {"configurable": {"thread_id": session_id}}
-        
-        # 构建输入
         input_msg = {"messages": [HumanMessage(content=message)]}
         
         async def event_generator() -> AsyncGenerator[str, None]:
             try:
-                # 发送开始事件
                 yield f"data: {json.dumps({'type': 'start'})}\n\n"
                 
                 full_reply = ""
@@ -437,23 +812,22 @@ async def stream_run(request: Request):
                         chunk = event.get("data", {}).get("chunk", None)
                         if chunk and hasattr(chunk, "content") and chunk.content:
                             full_reply += chunk.content
-                            yield f"data: {json.dumps({'type': 'text', 'content': chunk.content})}\n\n"
+                            yield f"data: {json.dumps({'type': 'answer', 'content': {'answer': chunk.content}})}\n\n"
                     
                     elif kind == "on_tool_start":
                         tool_name = event.get("name", "")
-                        yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name})}\n\n"
+                        yield f"data: {json.dumps({'type': 'tool_start', 'content': {'tool': tool_name}})}\n\n"
                     
                     elif kind == "on_tool_end":
                         tool_output = event.get("data", {}).get("output", "")
                         tool_name = event.get("name", "")
-                        yield f"data: {json.dumps({'type': 'tool_response', 'tool': tool_name, 'result': str(tool_output)})}\n\n"
+                        yield f"data: {json.dumps({'type': 'tool_response', 'content': {'tool_response': {'result': str(tool_output), 'tool': tool_name}}})}\n\n"
                 
-                # 发送结束事件
-                yield f"data: {json.dumps({'type': 'end', 'full_reply': full_reply})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'content': {'full_reply': full_reply}})}\n\n"
                 
             except Exception as e:
                 logger.error(f"Stream error: {e}")
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'content': {'message': str(e)}})}\n\n"
         
         return StreamingResponse(event_generator(), media_type="text/event-stream")
         
