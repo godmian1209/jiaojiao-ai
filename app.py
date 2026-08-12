@@ -353,6 +353,8 @@ HTML_PAGE = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="椒椒">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/icon-192.png">
 <title>椒椒 - 语音通话</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -745,6 +747,56 @@ async def root():
 async def health():
     """健康检查"""
     return {"status": "ok", "message": "椒椒在线~"}
+
+
+@app.get("/manifest.json")
+async def manifest():
+    """PWA manifest"""
+    return JSONResponse(content={
+        "name": "椒椒 - 你的专属女友",
+        "short_name": "椒椒",
+        "description": "霸道御姐专属女友，语音通话、长期记忆、情感系统",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#1a1a2e",
+        "theme_color": "#e84393",
+        "orientation": "portrait",
+        "icons": [
+            {
+                "src": "/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+            },
+            {
+                "src": "/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png"
+            }
+        ]
+    })
+
+
+@app.get("/icon-192.png")
+@app.get("/icon-512.png")
+async def icons():
+    """返回默认图标（红色背景）"""
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+    
+    img = Image.new('RGB', (512, 512), color='#e84393')
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 200)
+    except:
+        font = ImageFont.load_default()
+    draw.text((256, 256), "椒", fill='white', font=font, anchor='mm')
+    
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    
+    from fastapi.responses import Response
+    return Response(content=buf.read(), media_type="image/png")
 
 
 class ChatRequest(BaseModel):
