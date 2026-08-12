@@ -1,0 +1,22 @@
+{
+  "name": "椒椒 - 你的专属女友",
+  "short_name": "椒椒",
+  "description": "霸道御姐专属女友，语音通话、长期记忆、情感系统",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#e94560",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
